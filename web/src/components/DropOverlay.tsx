@@ -1,5 +1,8 @@
 /** Fullscreen overlay shown (via the `body.drag` class) while a file is dragged. */
+import { useI18n } from "../i18n/context";
+
 export function DropOverlay() {
+  const { t } = useI18n();
   return (
     <div
       className="drop-overlay pointer-events-none fixed inset-0 z-[200] flex items-center justify-center bg-[rgba(11,12,16,0.78)] opacity-0 backdrop-blur-sm transition-opacity duration-150 ease-fluid"
@@ -15,8 +18,7 @@ export function DropOverlay() {
           <path d="M0 16 L8 16 L12 6 L18 26 L24 10 L30 22 L36 4 L42 28 L48 14 L54 18 L60 8 L66 24 L72 12 L78 20 L84 6 L90 26 L96 16 L104 16 L120 16" />
         </svg>
         <p className="m-0 text-base text-muted">
-          Drop an <strong className="font-semibold text-content">audio file</strong> to
-          transcribe
+          {t("drop.text")}
         </p>
       </div>
     </div>

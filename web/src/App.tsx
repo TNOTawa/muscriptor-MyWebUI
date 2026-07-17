@@ -11,7 +11,9 @@ import { DropOverlay } from "./components/DropOverlay";
 import { Footer } from "./components/Footer";
 import { WelcomeScreen } from "./components/WelcomeScreen";
 import { ConsentBanner } from "./components/ConsentBanner";
+import { LangSwitcher } from "./components/LangSwitcher";
 import { track } from "./analytics";
+import { useI18n } from "./i18n/context";
 
 /**
  * A failure surfaced on the welcome screen. `server` means the backend is
@@ -19,7 +21,7 @@ import { track } from "./analytics";
  * `file` is a per-upload problem (e.g. an undecodable audio file) shown
  * alongside the picker so the user can choose a different file.
  */
-export type AppError = { kind: "server" | "file"; message: string };
+export type AppError = { kind: "server" | "file" | "soundfont"; message: string };
 import { ProgressEstimator, formatClock } from "./progress";
 
 type Screen = "welcome" | "transcribe";
@@ -38,7 +40,8 @@ const EXAMPLE = {
 };
 
 export function App() {
-  const audio = useAudioEngine();
+  const { t } = useI18n();
+  const { audio, synthError } = useAudioEngine();
   const rollRef = useRef<PianoRoll | null>(null);
   const clockRef = useRef<HTMLSpanElement | null>(null);
   // Progress estimator (stable across renders) + the DOM nodes its smoothed
@@ -66,6 +69,7 @@ export function App() {
   // True while a file is being dragged over the window. On the welcome screen
   // this swaps the panel's prompt in place instead of showing the overlay.
   const [dragging, setDragging] = useState(false);
+  const [loadingSoundFont, setLoadingSoundFont] = useState(false);
 
   const midiFilenameRef = useRef("transcription.mid");
   // Mirror of the selected conditioning set, read at submit time without
@@ -77,7 +81,7 @@ export function App() {
   const appStateRef = useRef(appState);
   appStateRef.current = appState;
 
-  const { transcribe, abort } = useTranscription({
+  const { transcribe, abort, forceStop } = useTranscription({
     audio,
     rollRef,
     getConditioning: () => Array.from(condRef.current),
@@ -94,6 +98,7 @@ export function App() {
     setCurrentFile,
     setUserScrolled,
     midiFilenameRef,
+    t,
   });
   // Start transcribing the file picked on the welcome screen and switch views.
   // Called from a button click, so the AudioContext unlock inside `transcribe`
@@ -135,7 +140,7 @@ export function App() {
   // "Transcribe another file" (also the wordmark, on the transcribe screen):
   // confirm (the work is about to be discarded), then tear down and go back.
   function transcribeAnother() {
-    if (!window.confirm("Discard this transcription and start over?")) return;
+    if (!window.confirm(t("app.discardConfirm"))) return;
     setSelectedFile(null);
     resetToWelcome();
   }
@@ -161,7 +166,7 @@ export function App() {
     // first, then tear everything down (stop playback, clear the roll) so the
     // music doesn't keep playing behind the welcome screen.
     if (screen === "transcribe") {
-      if (!window.confirm("Discard this transcription and start over with the dropped file?"))
+      if (!window.confirm(t("app.discardDropped")))
         return;
       resetToWelcome();
     }
@@ -235,6 +240,8 @@ export function App() {
 
   // Per-frame: advance the playhead, redraw the canvas, and tick the clock.
   // Kept off React state so it doesn't trigger ~60fps re-renders.
+  const doneInStrRef = useRef(t("output.doneIn"));
+  useEffect(() => { doneInStrRef.current = t("output.doneIn"); }, [t]);
   useEffect(() => {
     let raf = 0;
     const frame = () => {
@@ -268,7 +275,7 @@ export function App() {
           if (dur > 0) {
             let text = `${formatClock(frac * dur)}/${formatClock(dur)}`;
             const eta = progress.etaMs(now);
-            if (eta != null) text += ` · done in ${formatClock(eta / 1000)}`;
+            if (eta != null) text += ` · ${doneInStrRef.current} ${formatClock(eta / 1000)}`;
             progressLabelRef.current.textContent = text;
           } else {
             progressLabelRef.current.textContent = "";
@@ -285,6 +292,27 @@ export function App() {
   useEffect(() => {
     (window as unknown as { __mu: unknown }).__mu = { audio, rollRef };
   }, [audio]);
+
+  // Synth error → user-visible SoundFont error banner on the welcome screen.
+  useEffect(() => {
+    if (synthError) {
+      setError({ kind: "soundfont", message: synthError });
+    } else {
+      setError((prev) => (prev?.kind === "soundfont" ? null : prev));
+    }
+  }, [synthError]);
+
+  async function handleLoadSoundFont(file: File) {
+    setLoadingSoundFont(true);
+    try {
+      await audio.loadLocalSoundFont(file);
+      setError((prev) => (prev?.kind === "soundfont" ? null : prev));
+    } catch {
+      // error already set by the callback
+    } finally {
+      setLoadingSoundFont(false);
+    }
+  }
 
   return (
     <>
@@ -310,21 +338,22 @@ export function App() {
           }
           role={screen === "transcribe" ? "button" : undefined}
           tabIndex={screen === "transcribe" ? 0 : undefined}
-          title={screen === "transcribe" ? "Transcribe another file" : undefined}
+          title={screen === "transcribe" ? t("app.transcribeAnother") : undefined}
         >
           <img
             src="/muscriptor-logo-v4.svg"
-            alt="MuScriptor logo"
+            alt={t("app.logoAlt")}
             className="block h-[clamp(72px,10vw,110px)] w-auto"
             draggable={false}
           />
           <div className="flex flex-col gap-1">
-            <span className="text-[clamp(2rem,8vw,3rem)] font-bold leading-none text-white">MuScriptor</span>
+            <span className="text-[clamp(2rem,8vw,3rem)] font-bold leading-none text-white">{t("app.title")}</span>
             <span className="text-sm text-muted">
-              Audio to MIDI transcription
+              {t("app.tagline")}
             </span>
           </div>
         </div>
+        <LangSwitcher />
       </header>
 
       {screen === "welcome" ? (
@@ -338,6 +367,8 @@ export function App() {
           dragging={dragging}
           error={error}
           setError={setError}
+          loadingSoundFont={loadingSoundFont}
+          onLoadSoundFont={handleLoadSoundFont}
         />
       ) : (
         <main className="mx-auto grid max-w-7xl grid-cols-[1fr_300px] gap-4 px-7 pb-12 pt-2 max-[760px]:grid-cols-1">
@@ -382,6 +413,7 @@ export function App() {
             midiBlob={midiBlob}
             currentFile={currentFile}
             onTranscribeAnother={transcribeAnother}
+            onStop={forceStop}
           />
         </main>
       )}

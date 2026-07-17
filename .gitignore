@@ -1,16 +1,60 @@
+# ── 模型权重 & 大型二进制 ──────────────────────────────────
 *.safetensors
+*.ckpt
+*.pt
+*.pth
+*.onnx
+*.bin
+
+# ── Python ──────────────────────────────────────────────────
+__pycache__/
 *.pyc
+*.py[cod]
+*.egg-info/
+.eggs/
+/dist
+*.egg
+.pytest_cache/
+.ruff_cache/
+
+# ── 虚拟环境 & 包管理器缓存 ────────────────────────────────
+.venv/
+.uv_cache/
+
+# ── Web / Node ──────────────────────────────────────────────
+web/node_modules/
+web/dist/
+muscriptor/web_dist/
+web/tsconfig.tsbuildinfo
+
+# ── 临时文件 ────────────────────────────────────────────────
+tmp/
+*.log
+*.tmp
+*.swp
+*.swo
+*~
+
+# ── 音频 & SoundFont ────────────────────────────────────────
+*.sf2
 *.mid
 !headache_mastered.mid
 *.wav
 *.mp3
 !headache_by_lost_deposit_1min.mp3
 *.ogg
-*.sf2
-web/node_modules
-muscriptor/web_dist/
-web/tsconfig.tsbuildinfo
-/dist
-*.egg-info
-__pycache__
+
+# ── Jupyter ─────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb
+
+# ── OS 生成文件 ─────────────────────────────────────────────
 .DS_Store
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+
+# ── IDE / 编辑器 ────────────────────────────────────────────
+.vscode/
+.idea/
+*.sublime-workspace

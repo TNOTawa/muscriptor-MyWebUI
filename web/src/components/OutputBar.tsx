@@ -3,6 +3,7 @@ import clsx from "clsx";
 import { Button } from "./Button";
 import { IconChevron, IconDownload } from "./icons";
 import { track } from "../analytics";
+import { useI18n } from "../i18n/context";
 
 /**
  * Output / "job" actions, shown below the piano roll: live transcription
@@ -24,6 +25,7 @@ export function OutputBar(props: {
   midiBlob: Blob | null;
   currentFile: File | null;
   onTranscribeAnother: () => void;
+  onStop?: () => void;
 }) {
   const {
     transcribing,
@@ -34,7 +36,9 @@ export function OutputBar(props: {
     midiBlob,
     currentFile,
     onTranscribeAnother,
+    onStop,
   } = props;
+  const { t } = useI18n();
   const [synthesizing, setSynthesizing] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -98,7 +102,7 @@ export function OutputBar(props: {
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      alert("Couldn't create the audio file: " + (e as Error).message);
+      alert(t("output.synthError") + (e as Error).message);
     } finally {
       setSynthesizing(false);
     }
@@ -122,9 +126,22 @@ export function OutputBar(props: {
             ref={progressLabelRef}
             className="shrink-0 whitespace-nowrap font-mono text-xs tabular-nums text-faint"
           >
-            estimating…
+            {t("output.estimating")}
           </span>
         </div>
+      )}
+
+      {transcribing && onStop && (
+        <Button
+          kind="secondary"
+          className="shrink-0 border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+          onClick={(e) => {
+            e.currentTarget.blur();
+            onStop();
+          }}
+        >
+          {t("output.stopTranscribing")}
+        </Button>
       )}
 
       <div className="ml-auto flex items-center gap-2.5">
@@ -138,7 +155,7 @@ export function OutputBar(props: {
             aria-expanded={menuOpen}
           >
             <IconDownload />
-            {synthesizing ? "Synthesizing…" : "Download"}
+            {synthesizing ? t("output.synthesizing") : t("output.download")}
             <IconChevron
               className={clsx("transition-transform", menuOpen && "rotate-180")}
             />
@@ -158,33 +175,33 @@ export function OutputBar(props: {
                   download();
                 }}
               >
-                MIDI file
+                {t("output.midiFile")}
               </Button>
               <Button
                 kind="ghost"
                 pad="px-3 py-2"
                 role="menuitem"
                 className={menuItem}
-                title="Just the transcribed notes, played with a SoundFont (mono)"
+                title={t("output.wavTranscriptionOnlyDesc")}
                 onClick={() => {
                   setMenuOpen(false);
                   downloadWav("synth");
                 }}
               >
-                WAV - transcription only
+                {t("output.wavTranscriptionOnly")}
               </Button>
               <Button
                 kind="ghost"
                 pad="px-3 py-2"
                 role="menuitem"
                 className={menuItem}
-                title="Original audio (L) + transcribed notes played with a SoundFont (R)"
+                title={t("output.wavStereoDesc")}
                 onClick={() => {
                   setMenuOpen(false);
                   downloadWav("mix");
                 }}
               >
-                WAV - stereo with original
+                {t("output.wavStereo")}
               </Button>
             </div>
           )}
@@ -195,7 +212,7 @@ export function OutputBar(props: {
             onTranscribeAnother();
           }}
         >
-          Transcribe another file
+          {t("output.transcribeAnother")}
         </Button>
       </div>
     </div>

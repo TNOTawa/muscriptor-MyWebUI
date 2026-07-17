@@ -94,8 +94,26 @@ def create_app(model: TranscriptionModel, web_dir: str | Path | None = None) -> 
         Fetched from SF3_URL on first request (in a worker thread, so the
         event loop keeps serving) and cached locally.
         """
-        path = await asyncio.to_thread(download_if_necessary, SF3_URL)
+        try:
+            path = await asyncio.to_thread(download_if_necessary, SF3_URL)
+        except Exception as e:
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    f"无法获取 SoundFont ({SF3_URL}): {e}\n\n"
+                    "请将 .sf3 或 .sf2 文件拖放到浏览器窗口中作为本地音源。"
+                ),
+            )
         return FileResponse(path, media_type="application/octet-stream")
+
+    @app.post("/transcribe/cancel")
+    async def cancel_transcribe():
+        """Signal the in-progress transcription to stop immediately.
+        The SSE stream will receive a partial MIDI event and close naturally."""
+        with cancel_guard:
+            if current_cancel is not None:
+                current_cancel.set()
+        return {"status": "ok"}
 
     @app.post("/transcribe")
     async def transcribe(
@@ -160,6 +178,13 @@ def create_app(model: TranscriptionModel, web_dir: str | Path | None = None) -> 
         release_lock = _make_release_once(transcribe_lock)
 
         def gen():
+            def _send_midi():
+                if not events:
+                    return
+                midi_bytes = model.events_to_midi_bytes(iter(events))
+                midi_b64 = base64.b64encode(midi_bytes).decode("ascii")
+                return f"data: {json.dumps({'type': 'midi', 'data': midi_b64})}\n\n"
+
             try:
                 events: list[NoteStartEvent | NoteEndEvent] = []
                 # batch_size=1 so each chunk's notes stream out as soon as it is
@@ -172,10 +197,13 @@ def create_app(model: TranscriptionModel, web_dir: str | Path | None = None) -> 
                     batch_size=1,
                     no_eos_is_ok=True,
                 ):
-                    # A newer request preempted this run — stop generating
-                    # (closing the model.transcribe generator) and release the
-                    # lock via the finally, at most one chunk after the signal.
+                    # A newer request preempted this run, or the user clicked
+                    # "Stop" — send partial MIDI with accumulated events so the
+                    # client can still download what's been transcribed so far.
                     if cancel.is_set():
+                        midi_chunk = _send_midi()
+                        if midi_chunk:
+                            yield midi_chunk
                         return
                     if isinstance(ev, ProgressEvent):
                         # Coarse chunk-completion anchor — forward it but keep it
@@ -196,6 +224,9 @@ def create_app(model: TranscriptionModel, web_dir: str | Path | None = None) -> 
                 # exact `muscriptor transcribe` logic) and send it as a final event
                 # with the bytes base64-encoded.
                 if cancel.is_set():
+                    midi_chunk = _send_midi()
+                    if midi_chunk:
+                        yield midi_chunk
                     return
                 midi_bytes = model.events_to_midi_bytes(iter(events))
                 midi_b64 = base64.b64encode(midi_bytes).decode("ascii")

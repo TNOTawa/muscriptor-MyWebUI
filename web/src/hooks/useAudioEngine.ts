@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useSyncExternalStore } from "react";
 import { AudioEngine } from "../audio";
 
 /**
@@ -9,9 +9,22 @@ import { AudioEngine } from "../audio";
  * ref guard guarantees that even if React re-renders the owning component. (We
  * deliberately don't wrap the app in <StrictMode>, whose simulated double-mount
  * would otherwise create two engines competing over the one global transport.)
+ *
+ * Returns the engine instance and its current `synthError` (null when healthy),
+ * kept up-to-date via the engine's callback.
  */
-export function useAudioEngine(): AudioEngine {
+export function useAudioEngine(): { audio: AudioEngine; synthError: string | null } {
   const ref = useRef<AudioEngine | null>(null);
   if (ref.current === null) ref.current = new AudioEngine();
-  return ref.current;
+  const audio = ref.current;
+
+  const synthError = useSyncExternalStore(
+    (onStoreChange) => {
+      audio.setSynthStateCallback(onStoreChange);
+      return () => audio.setSynthStateCallback(null);
+    },
+    () => audio.synthError,
+  );
+
+  return { audio, synthError };
 }

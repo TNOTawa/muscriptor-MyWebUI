@@ -3,6 +3,7 @@ import clsx from "clsx";
 import type { AudioEngine } from "../audio";
 import { Button } from "./Button";
 import { IconPlay, IconPause } from "./icons";
+import { useI18n } from "../i18n/context";
 
 export function Controls(props: {
   audio: AudioEngine;
@@ -18,6 +19,7 @@ export function Controls(props: {
 }) {
   const { audio, clockRef, mix, onMixChange, stereo, onStereoChange, following, onToggleFollow } =
     props;
+  const { t } = useI18n();
   // The transport's state isn't React state (and it can auto-stop at the end),
   // so poll it each frame to keep the toggle button's label in sync.
   const [playing, setPlaying] = useState(false);
@@ -44,18 +46,18 @@ export function Controls(props: {
         }}
       >
         {playing ? <IconPause /> : <IconPlay />}
-        {playing ? "Pause" : "Play"}
+        {playing ? t("controls.pause") : t("controls.play")}
       </Button>
       <Button
         className={clsx("text-content", following && "border-accent hover:border-accent")}
         aria-pressed={following}
-        title={following ? "Stop following the playhead" : "Scroll along with the playhead"}
+        title={following ? t("controls.stopFollowing") : t("controls.scrollAlong")}
         onClick={(e) => {
           e.currentTarget.blur();
           onToggleFollow();
         }}
       >
-        Follow playhead
+        {t("controls.followPlayhead")}
       </Button>
       <span
         className="rounded-md border border-line bg-bg px-2.5 py-1 font-mono text-sm tabular-nums text-muted"
@@ -76,7 +78,7 @@ export function Controls(props: {
           )}
           onClick={() => !stereo && onMixChange(0)}
         >
-          Original
+          {t("controls.original")}
         </span>
         <input
           className="mix-slider"
@@ -103,7 +105,7 @@ export function Controls(props: {
           )}
           onClick={() => !stereo && onMixChange(1)}
         >
-          MIDI
+          {t("controls.midi")}
         </span>
       </label>
       <label className="inline-flex cursor-pointer select-none items-center gap-1.5 text-sm text-muted px-3">
@@ -117,7 +119,7 @@ export function Controls(props: {
           // which the browser forwards to the checkbox.
           onClick={(e) => e.currentTarget.blur()}
         />
-        <span>Stereo</span>
+        <span>{t("controls.stereo")}</span>
       </label>
     </div>
   );

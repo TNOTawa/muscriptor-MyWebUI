@@ -1,6 +1,7 @@
 import * as Tone from "tone";
 import { WorkletSynthesizer } from "spessasynth_lib";
 import workletUrl from "spessasynth_lib/dist/spessasynth_processor.min.js?url";
+import { getCachedSoundFont, putCachedSoundFont } from "./soundfont-cache";
 
 /**
  * Playback goes through spessasynth_lib, a full SoundFont synthesizer running
@@ -89,6 +90,9 @@ export class AudioEngine {
   private mix = 0.75; // 0 = full WAV, 1 = full MIDI
   /** When true: original audio hard-left, synthesis hard-right (mix ignored). */
   private stereo = false;
+  /** Error message if synth init failed. Cleared on retry. */
+  synthError: string | null = null;
+  private onSynthStateChange: (() => void) | null = null;
 
   constructor() {
     // Tone.getContext() lazily creates a (suspended) AudioContext — no user
@@ -106,7 +110,9 @@ export class AudioEngine {
     this.wavGain = this.ctx.createGain();
     this.wavGain.connect(this.wavPanner);
     this.initSynth().catch((e) => {
+      this.synthError = String(e);
       console.error("Failed to initialize the synthesizer:", e);
+      this.onSynthStateChange?.();
     });
     this.applyMix();
     Tone.getTransport().on("start", (time) => this.startWavSource(time));
@@ -117,16 +123,49 @@ export class AudioEngine {
     Tone.getTransport().on("pause", () => this.stopWavSource());
   }
 
+  /** Register a callback fired when synth state changes (error / retry). */
+  setSynthStateCallback(fn: (() => void) | null) {
+    this.onSynthStateChange = fn;
+  }
+
+  /**
+   * Retry synth initialization with a locally-supplied SoundFont (.sf2 / .sf3).
+   * Call this from a user-gesture handler so the AudioContext can be resumed.
+   */
+  async loadLocalSoundFont(file: File) {
+    this.synthError = null;
+    this.onSynthStateChange?.();
+    try {
+      const buffer = await file.arrayBuffer();
+      const cached = buffer.slice(0);
+      const toneCtx = Tone.getContext();
+      await toneCtx.addAudioWorkletModule(workletUrl);
+      const synth = new WorkletSynthesizer(this.ctx, {
+        audioNodeCreators: {
+          worklet: (_ctx, name, options) =>
+            toneCtx.createAudioWorkletNode(name, options),
+        },
+      });
+      synth.connect(this.midiGain);
+      await synth.isReady;
+      await synth.soundBankManager.addSoundBank(buffer, file.name);
+      await putCachedSoundFont(cached);
+      this.synth = synth;
+      const queued = this.pendingNotes;
+      this.pendingNotes = [];
+      for (const n of queued) this.scheduleNoteRaw(n);
+      this.onSynthStateChange?.();
+    } catch (e) {
+      this.synthError = String(e);
+      console.error("Failed to load local soundfont:", e);
+      this.onSynthStateChange?.();
+      throw e;
+    }
+  }
+
   /** Load the worklet + soundfont, then flush notes queued in the meantime. */
   private async initSynth() {
-    // Fetch the soundfont concurrently with the worklet setup.
-    const soundfont = fetch(SOUNDFONT_URL).then((res) => {
-      if (!res.ok) throw new Error(`${SOUNDFONT_URL}: HTTP ${res.status}`);
-      return res.arrayBuffer();
-    });
-    // Tone wraps its AudioContext with standardized-audio-context, so the
-    // worklet module and node must be created through Tone's own helpers —
-    // spessasynth's audioNodeCreators hook exists for exactly this.
+    const soundfont = this.fetchOrCachedSoundFont();
     const toneCtx = Tone.getContext();
     await toneCtx.addAudioWorkletModule(workletUrl);
     const synth = new WorkletSynthesizer(this.ctx, {
@@ -145,6 +184,19 @@ export class AudioEngine {
     const queued = this.pendingNotes;
     this.pendingNotes = [];
     for (const n of queued) this.scheduleNoteRaw(n);
+  }
+
+  /** Resolve the SoundFont buffer: cache → backend → error. */
+  private async fetchOrCachedSoundFont(): Promise<ArrayBuffer> {
+    const cached = await getCachedSoundFont();
+    if (cached) return cached;
+    console.warn("[SoundFont cache] miss — fetching from backend");
+    const res = await fetch(SOUNDFONT_URL);
+    if (!res.ok) throw new Error(`${SOUNDFONT_URL}: HTTP ${res.status}`);
+    const buffer = await res.arrayBuffer();
+    // clone before the synth consumes & detaches the original
+    putCachedSoundFont(buffer.slice(0));
+    return buffer;
   }
 
   /** Decode `file` and remember the buffer for synced WAV playback. */

@@ -53,6 +53,8 @@ export interface TranscriptionDeps {
   setUserScrolled: (v: boolean) => void;
   /** Mutated so the download anchor can name the saved file. */
   midiFilenameRef: RefObject<string>;
+  /** Translation function for user-facing error messages. */
+  t: (key: string) => string;
 }
 
 /**
@@ -75,6 +77,7 @@ export function useTranscription(deps: TranscriptionDeps) {
     setCurrentFile,
     setUserScrolled,
     midiFilenameRef,
+    t,
   } = deps;
 
   // Names already surfaced in the instrument list this run.
@@ -234,7 +237,7 @@ export function useTranscription(deps: TranscriptionDeps) {
       const message =
         e instanceof TranscribeError && e.userMessage
           ? e.userMessage
-          : "The muscriptor server is temporarily unavailable. Please try again later.";
+          : t("server.unavailable");
       onError(message);
     } finally {
       if (activeRef.current === controller) activeRef.current = null;
@@ -250,5 +253,18 @@ export function useTranscription(deps: TranscriptionDeps) {
     activeRef.current = null;
   }
 
-  return { transcribe, abort };
+  /** 强制停止当前转录，保留已转录的部分结果作为最终状态。
+   *  向服务端发送 cancel 信号，服务端将在下一个 chunk 边界处
+   *  组装部分 MIDI 并作为最终事件下发，SSE 流随后自然关闭。 */
+  async function forceStop() {
+    setAppState("done");
+    try {
+      await fetch("/transcribe/cancel", { method: "POST" });
+    } catch {
+      activeRef.current?.abort();
+      activeRef.current = null;
+    }
+  }
+
+  return { transcribe, abort, forceStop };
 }

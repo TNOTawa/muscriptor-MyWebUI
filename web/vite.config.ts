@@ -11,6 +11,7 @@ export default defineConfig({
     proxy: Object.fromEntries(
       [
         "/transcribe",
+        "/transcribe/cancel",
         "/instruments",
         "/auralize",
         "/health",

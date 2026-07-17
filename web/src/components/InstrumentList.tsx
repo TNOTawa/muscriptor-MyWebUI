@@ -5,15 +5,16 @@ import { Button } from "./Button";
 import { instrumentColor, type PianoRoll } from "../pianoroll";
 import { label } from "../instruments";
 import { IconSound, IconSoundOff } from "./icons";
+import { useI18n } from "../i18n/context";
 
 /** A circled "?" that reveals an explanatory tooltip on hover/focus. */
-function HelpHint(props: { children: string }) {
+function HelpHint(props: { children: string; helpHint: string }) {
   return (
     <span className="group/help relative ml-1.5 inline-flex align-middle">
       <span
         tabIndex={0}
         className="flex size-4 cursor-help items-center justify-center rounded-full border border-line-strong text-[10px] font-semibold text-muted outline-none transition-colors duration-150 hover:border-accent hover:text-content focus-visible:border-accent focus-visible:text-content"
-        aria-label="What does this mean?"
+        aria-label={props.helpHint}
       >
         ?
       </span>
@@ -28,14 +29,14 @@ function HelpHint(props: { children: string }) {
 }
 
 /** A given instrument that wasn't detected: gray, struck-through, no controls. */
-function UndetectedRow(props: { name: string }) {
+function UndetectedRow(props: { name: string; locale: string; notDetected: string }) {
   return (
     <li className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-muted opacity-40 [animation:rise_0.4s_var(--ease-fluid)_both]">
       <span className="size-3 shrink-0 rounded-sm bg-faint" />
       <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap line-through">
-        {label(props.name)}
+        {label(props.name, props.locale)}
       </span>
-      <span className="shrink-0 text-xs italic text-faint">not detected</span>
+      <span className="shrink-0 text-xs italic text-faint">{props.notDetected}</span>
     </li>
   );
 }
@@ -49,8 +50,13 @@ function InstrumentRow(props: {
   onToggleSolo: () => void;
   /** Hovering the row spotlights this instrument's notes on the piano roll. */
   onHover: (name: string | null) => void;
+  locale: string;
+  soloTitle: string;
+  unsoloTitle: string;
+  muteTitle: string;
+  unmuteTitle: string;
 }) {
-  const { name, muted, soloed, onToggleMute, onToggleSolo, onHover } = props;
+  const { name, muted, soloed, onToggleMute, onToggleSolo, onHover, locale } = props;
   return (
     <li
       className="group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-muted transition-colors duration-150 ease-fluid hover:bg-white/[0.04] hover:text-content [animation:rise_0.4s_var(--ease-fluid)_both]"
@@ -68,7 +74,7 @@ function InstrumentRow(props: {
           style={{ background: instrumentColor(name) }}
         />
         <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-          {label(name)}
+          {label(name, locale)}
         </span>
       </div>
       <div className="flex items-center gap-0.5">
@@ -81,7 +87,7 @@ function InstrumentRow(props: {
               ? "text-accent-2 opacity-100"
               : "text-muted opacity-70 group-hover:opacity-100 hover:text-content",
           )}
-          title={soloed ? "Unsolo" : "Solo (mute everything else)"}
+          title={soloed ? props.unsoloTitle : props.soloTitle}
           aria-pressed={soloed}
           onClick={onToggleSolo}
         >
@@ -96,7 +102,7 @@ function InstrumentRow(props: {
               ? "text-red opacity-100"
               : "text-muted opacity-70 group-hover:opacity-100 hover:text-content",
           )}
-          title={muted ? "Unmute on MIDI track" : "Mute on MIDI track"}
+          title={muted ? props.unmuteTitle : props.muteTitle}
           aria-pressed={muted}
           onClick={onToggleMute}
         >
@@ -114,6 +120,7 @@ export function InstrumentList(props: {
   rollRef: RefObject<PianoRoll | null>;
 }) {
   const { instruments, given, audio, rollRef } = props;
+  const { t, locale } = useI18n();
   const [muted, setMuted] = useState<Set<string>>(() => new Set());
   const [soloed, setSoloed] = useState<string | null>(null);
 
@@ -154,6 +161,11 @@ export function InstrumentList(props: {
       onToggleMute={() => toggleMute(name)}
       onToggleSolo={() => toggleSolo(name)}
       onHover={(n) => rollRef.current?.setHighlightedInstrument(n)}
+      locale={locale}
+      soloTitle={t("instruments.solo")}
+      unsoloTitle={t("instruments.unsolo")}
+      muteTitle={t("instruments.mute")}
+      unmuteTitle={t("instruments.unmute")}
     />
   );
 
@@ -167,10 +179,9 @@ export function InstrumentList(props: {
       {hasGiven ? (
         <>
           <h2 className="m-0 mb-3 flex items-center text-base font-semibold">
-            Instruments
-            <HelpHint>
-              The instruments you specified. Greyed-out ones weren't detected in
-              the audio.
+            {t("instruments.title")}
+            <HelpHint helpHint={t("instruments.helpHint")}>
+              {t("instruments.helpSpecified")}
             </HelpHint>
           </h2>
           <ul className="m-0 flex list-none flex-col gap-0.5 p-0 text-sm">
@@ -178,7 +189,7 @@ export function InstrumentList(props: {
               detectedSet.has(name) ? (
                 row(name)
               ) : (
-                <UndetectedRow key={name} name={name} />
+                <UndetectedRow key={name} name={name} locale={locale} notDetected={t("instruments.notDetected")} />
               ),
             )}
           </ul>
@@ -187,10 +198,9 @@ export function InstrumentList(props: {
           {extra.length > 0 && (
             <>
               <h2 className="m-0 mb-3 mt-5 text-base font-semibold">
-                More instruments{" "}
-                <HelpHint>
-                  More instruments that the model detected in the audio, even
-                  without them being explicitly given.
+                {t("instruments.moreInstruments")}{" "}
+                <HelpHint helpHint={t("instruments.helpHint")}>
+                  {t("instruments.helpMore")}
                 </HelpHint>
               </h2>
               <ul className="m-0 flex list-none flex-col gap-0.5 p-0 text-sm">
@@ -201,7 +211,7 @@ export function InstrumentList(props: {
         </>
       ) : (
         <>
-          <h2 className="m-0 mb-3 text-base font-semibold">Instruments</h2>
+          <h2 className="m-0 mb-3 text-base font-semibold">{t("instruments.title")}</h2>
           <ul className="m-0 flex list-none flex-col gap-0.5 p-0 text-sm">
             {instruments.map(row)}
           </ul>
